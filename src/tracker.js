@@ -14,6 +14,7 @@ class SearchBehaviorAnalysisCollector {
     this.sessionId = this.getOrCreateSessionId();
     this.browserInfo = this.getBrowserInfo();
     this.colorIdentifier = this.getOrCreateColorIdentifier();
+    this.utmParams = this.getUtmParameters();
     this.setupEventListeners();
     this.setupBatchSending();
     this.setupPerformanceObserver();
@@ -242,6 +243,7 @@ class SearchBehaviorAnalysisCollector {
       sessionId: this.sessionId,
       colorIdentifier: this.colorIdentifier,
       browserInfo: this.browserInfo,
+      utmParams: this.utmParams,
       timestamp: new Date().toISOString()
     };
 
@@ -364,6 +366,21 @@ class SearchBehaviorAnalysisCollector {
       parts[0] === '127' ||
       parts[0] === '0'
     );
+  }
+
+  getUtmParameters() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const utmParams = {};
+    const utmKeys = ['source', 'medium', 'campaign', 'term', 'content'];
+    
+    utmKeys.forEach(key => {
+      const value = urlParams.get(`utm_${key}`);
+      if (value) {
+        utmParams[`utm_${key}`] = value;
+      }
+    });
+
+    return utmParams;
   }
 }
 
