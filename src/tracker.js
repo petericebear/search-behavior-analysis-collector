@@ -231,7 +231,6 @@ class SearchBehaviorAnalysisCollector {
       name: eventName,
       data: eventData,
       sessionId: this.sessionId,
-      colorIdentifier: this.colorIdentifier,
       timestamp: new Date().toISOString()
     });
 
@@ -244,8 +243,7 @@ class SearchBehaviorAnalysisCollector {
     this.events.push({
       type: 'click',
       ...clickData,
-      sessionId: this.sessionId,
-      colorIdentifier: this.colorIdentifier
+      sessionId: this.sessionId
     });
 
     if (this.events.length >= this.config.batchSize) {

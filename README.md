@@ -214,8 +214,7 @@ The collector sends data in the following format:
       position: 3, // Position of the clicked element (1-based index)
       searchRequestId: 'search-456', // ID of the search request that generated these results
       timestamp: '2024-01-01T12:00:00Z',
-      sessionId: 'uuid',
-      colorIdentifier: '#FF5733-#33FF57'
+      sessionId: 'uuid'
     },
     {
       type: 'performance_metric',
@@ -225,12 +224,11 @@ The collector sends data in the following format:
       size: 15000,
       url: 'https://example.com/image.jpg',
       timestamp: '2024-01-01T12:00:00Z',
-      sessionId: 'uuid',
-      colorIdentifier: '#FF5733-#33FF57'
+      sessionId: 'uuid'
     }
   ],
   sessionId: 'uuid',
-  colorIdentifier: '#FF5733-#33FF57',
+  colorIdentifier: '#FF5733-#33FF57', // Session-level anonymous identifier
   timestamp: '2024-01-01T12:00:00Z',
   browserInfo: {
     userAgent: '...',
@@ -257,7 +255,7 @@ The collector sends data in the following format:
 }
 ```
 
-The browser information is collected once per session and included at the session level, rather than being repeated for each event. This reduces payload size and improves efficiency.
+The browser information and color identifier are collected once per session and included at the session level, rather than being repeated for each event. This reduces payload size and improves efficiency.
 
 ### Data Sending
 
