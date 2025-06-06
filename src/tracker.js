@@ -20,6 +20,9 @@ class SearchBehaviorAnalysisCollector {
     this.setupEventListeners();
     this.setupBatchSending();
     this.setupPerformanceObserver();
+    
+    // Check session expiration periodically
+    setInterval(() => this.checkSessionExpiration(), 60000); // Check every minute
   }
 
   getBrowserInfo() {
@@ -146,17 +149,27 @@ class SearchBehaviorAnalysisCollector {
   getOrCreateSessionId() {
     // If session ID is provided in config, use it
     if (this.config.sessionId) {
-      sessionStorage.setItem('tracker_session_id', this.config.sessionId);
+      localStorage.setItem('tracker_session_id', this.config.sessionId);
+      localStorage.setItem('tracker_session_timestamp', new Date().toISOString());
       return this.config.sessionId;
     }
 
-    // Otherwise, get existing or create new session ID
-    const sessionId = sessionStorage.getItem('tracker_session_id');
-    if (sessionId) {
-      return sessionId;
+    // Get existing session ID from localStorage
+    const sessionId = localStorage.getItem('tracker_session_id');
+    const sessionTimestamp = localStorage.getItem('tracker_session_timestamp');
+
+    // Check if session exists and hasn't expired
+    if (sessionId && sessionTimestamp) {
+      const sessionAge = new Date().getTime() - new Date(sessionTimestamp).getTime();
+      if (sessionAge < this.config.sessionTimeout) {
+        return sessionId;
+      }
     }
+
+    // Create new session if none exists or if expired
     const newSessionId = this.generateUUID();
-    sessionStorage.setItem('tracker_session_id', newSessionId);
+    localStorage.setItem('tracker_session_id', newSessionId);
+    localStorage.setItem('tracker_session_timestamp', new Date().toISOString());
     return newSessionId;
   }
 
@@ -292,8 +305,20 @@ class SearchBehaviorAnalysisCollector {
   }
 
   resetSession() {
-    sessionStorage.removeItem('tracker_session_id');
+    localStorage.removeItem('tracker_session_id');
+    localStorage.removeItem('tracker_session_timestamp');
     this.sessionId = this.getOrCreateSessionId();
+  }
+
+  // Add method to check session expiration
+  checkSessionExpiration() {
+    const sessionTimestamp = localStorage.getItem('tracker_session_timestamp');
+    if (sessionTimestamp) {
+      const sessionAge = new Date().getTime() - new Date(sessionTimestamp).getTime();
+      if (sessionAge >= this.config.sessionTimeout) {
+        this.resetSession();
+      }
+    }
   }
 
   // Utility method to track conversion events

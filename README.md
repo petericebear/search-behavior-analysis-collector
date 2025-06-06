@@ -60,8 +60,11 @@ The collector supports two session management modes:
 
 1. **Automatic Session Generation** (default):
    - Generates a new UUID for each session
-   - Stores session ID in sessionStorage
+   - Stores session ID in localStorage for persistence across browser sessions
+   - Includes session timestamp for expiration tracking
+   - Automatically expires sessions after the configured timeout period
    - Resets on conversion or timeout
+   - Checks session expiration every minute
 
 2. **Backend Session Injection**:
    - Accepts session ID from backend through config
@@ -73,9 +76,20 @@ The collector supports two session management modes:
    
    const collector = new SearchBehaviorAnalysisCollector({
      sessionId: sessionId,
+     sessionTimeout: 30 * 60 * 1000, // 30 minutes
      // ... other config options
    });
    ```
+
+### Session Expiration
+
+Sessions are managed with the following rules:
+- Sessions persist across browser restarts using localStorage
+- Each session has a timestamp that's checked for expiration
+- Sessions automatically expire after the configured timeout period
+- Expired sessions are automatically reset with a new session ID
+- Session expiration is checked every minute
+- Sessions can be manually reset using `resetSession()`
 
 ### Tracking Clicks
 
