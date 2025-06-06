@@ -210,8 +210,7 @@ class SearchBehaviorAnalysisCollector {
       data: eventData,
       sessionId: this.sessionId,
       colorIdentifier: this.colorIdentifier,
-      timestamp: new Date().toISOString(),
-      browserInfo: this.browserInfo
+      timestamp: new Date().toISOString()
     });
 
     if (this.events.length >= this.config.batchSize) {
@@ -224,8 +223,7 @@ class SearchBehaviorAnalysisCollector {
       type: 'click',
       ...clickData,
       sessionId: this.sessionId,
-      colorIdentifier: this.colorIdentifier,
-      browserInfo: this.browserInfo
+      colorIdentifier: this.colorIdentifier
     });
 
     if (this.events.length >= this.config.batchSize) {
@@ -243,7 +241,8 @@ class SearchBehaviorAnalysisCollector {
       events: eventsToSend,
       sessionId: this.sessionId,
       colorIdentifier: this.colorIdentifier,
-      browserInfo: this.browserInfo
+      browserInfo: this.browserInfo,
+      timestamp: new Date().toISOString()
     };
 
     try {

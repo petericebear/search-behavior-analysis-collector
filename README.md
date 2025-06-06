@@ -196,31 +196,7 @@ The collector sends data in the following format:
       y: 200,
       timestamp: '2024-01-01T12:00:00Z',
       sessionId: 'uuid',
-      colorIdentifier: '#FF5733-#33FF57',
-      browserInfo: {
-        userAgent: '...',
-        language: 'en-US',
-        platform: 'MacIntel',
-        screenWidth: 1920,
-        screenHeight: 1080,
-        viewportWidth: 1280,
-        viewportHeight: 800,
-        devicePixelRatio: 2,
-        timezone: 'America/New_York',
-        browser: 'Chrome',
-        ipAddress: '123.45.67.89',
-        connection: {
-          effectiveType: '4g',
-          downlink: 10,
-          rtt: 50,
-          saveData: false
-        },
-        memory: {
-          deviceMemory: 8,
-          hardwareConcurrency: 4
-        },
-        timestamp: '2024-01-01T12:00:00Z'
-      }
+      colorIdentifier: '#FF5733-#33FF57'
     },
     {
       type: 'performance_metric',
@@ -231,15 +207,39 @@ The collector sends data in the following format:
       url: 'https://example.com/image.jpg',
       timestamp: '2024-01-01T12:00:00Z',
       sessionId: 'uuid',
-      colorIdentifier: '#FF5733-#33FF57',
-      browserInfo: { /* ... */ }
+      colorIdentifier: '#FF5733-#33FF57'
     }
   ],
   sessionId: 'uuid',
   colorIdentifier: '#FF5733-#33FF57',
-  browserInfo: { /* ... */ }
+  timestamp: '2024-01-01T12:00:00Z',
+  browserInfo: {
+    userAgent: '...',
+    language: 'en-US',
+    platform: 'MacIntel',
+    screenWidth: 1920,
+    screenHeight: 1080,
+    viewportWidth: 1280,
+    viewportHeight: 800,
+    devicePixelRatio: 2,
+    timezone: 'America/New_York',
+    browser: 'Chrome',
+    ipAddress: '123.45.67.89',
+    connection: {
+      effectiveType: '4g',
+      downlink: 10,
+      rtt: 50,
+      saveData: false
+    },
+    memory: {
+      deviceMemory: 8,
+      hardwareConcurrency: 4
+    }
+  }
 }
 ```
+
+The browser information is collected once per session and included at the session level, rather than being repeated for each event. This reduces payload size and improves efficiency.
 
 ### Data Sending
 
