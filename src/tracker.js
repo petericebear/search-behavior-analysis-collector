@@ -4,10 +4,12 @@ class SearchBehaviorAnalysisCollector {
       endpoint: config.endpoint || '/api/track',
       selector: config.selector || '.trackable-item',
       dataAttribute: config.dataAttribute || 'data-item-id',
+      searchRequestIdAttribute: config.searchRequestIdAttribute || 'data-search-request-id',
       sessionTimeout: config.sessionTimeout || 30 * 60 * 1000, // 30 minutes
       batchSize: config.batchSize || 10,
       sendInterval: config.sendInterval || 10000, // 10 seconds
       sessionId: config.sessionId || null, // Allow session ID injection
+      searchRequestId: config.searchRequestId || null, // Allow searchRequestId injection
     };
 
     this.events = [];
@@ -18,7 +20,6 @@ class SearchBehaviorAnalysisCollector {
     this.setupEventListeners();
     this.setupBatchSending();
     this.setupPerformanceObserver();
-    this.collectIPAddress();
   }
 
   getBrowserInfo() {
@@ -173,10 +174,17 @@ class SearchBehaviorAnalysisCollector {
       if (target) {
         const itemId = target.getAttribute(this.config.dataAttribute);
         if (itemId) {
+          // Find all matching elements and get the index of the clicked one
+          const allElements = document.querySelectorAll(this.config.selector);
+          const position = Array.from(allElements).indexOf(target) + 1; // +1 for 1-based indexing
+          
+          // Get searchRequestId from data attribute or use the one from config
+          const searchRequestId = target.getAttribute(this.config.searchRequestIdAttribute) || this.config.searchRequestId;
+          
           this.trackClick({
             itemId,
-            x: event.clientX,
-            y: event.clientY,
+            position,
+            searchRequestId,
             timestamp: new Date().toISOString(),
           });
         }
@@ -315,59 +323,6 @@ class SearchBehaviorAnalysisCollector {
     return color;
   }
 
-  async collectIPAddress() {
-    try {
-      // Create a WebRTC peer connection
-      const pc = new RTCPeerConnection({ iceServers: [] });
-      
-      // Create a data channel
-      pc.createDataChannel('');
-      
-      // Create an offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      
-      // Get the ICE candidates
-      pc.onicecandidate = (ice) => {
-        if (!ice.candidate) return;
-        
-        // Extract IP from ICE candidate
-        const ipRegex = /([0-9]{1,3}(\.[0-9]{1,3}){3})/;
-        const match = ipRegex.exec(ice.candidate.candidate);
-        
-        if (match) {
-          const ip = match[1];
-          // Filter out private IPs
-          if (!this.isPrivateIP(ip)) {
-            this.browserInfo.ipAddress = ip;
-          }
-        }
-        
-        // Clean up
-        pc.close();
-      };
-      
-      // Set a timeout to clean up if no IP is found
-      setTimeout(() => {
-        pc.close();
-      }, 5000);
-    } catch (error) {
-      console.error('Error collecting IP address:', error);
-    }
-  }
-
-  isPrivateIP(ip) {
-    // Check if IP is private
-    const parts = ip.split('.');
-    return (
-      parts[0] === '10' ||
-      (parts[0] === '172' && parts[1] >= 16 && parts[1] <= 31) ||
-      (parts[0] === '192' && parts[1] === '168') ||
-      parts[0] === '127' ||
-      parts[0] === '0'
-    );
-  }
-
   getUtmParameters() {
     const urlParams = new URLSearchParams(window.location.search);
     const utmParams = {};
@@ -381,6 +336,11 @@ class SearchBehaviorAnalysisCollector {
     });
 
     return utmParams;
+  }
+
+  // Add method to update searchRequestId
+  updateSearchRequestId(searchRequestId) {
+    this.config.searchRequestId = searchRequestId;
   }
 }
 

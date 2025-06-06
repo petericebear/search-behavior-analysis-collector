@@ -13,8 +13,8 @@ A lightweight, vanilla JavaScript collector for user behavior and click tracking
 - Browser information collection
 - Comprehensive performance metrics tracking
 - Anonymous user tracking with color codes
-- Local IP address collection
 - Page visibility and unload tracking
+- Search request ID tracking for correlating clicks with search requests
 
 ## Installation
 
@@ -45,10 +45,12 @@ const collector = new SearchBehaviorAnalysisCollector({
   endpoint: 'https://your-api-endpoint.com/track',
   selector: '.your-item-class', // CSS selector for trackable items
   dataAttribute: 'data-item-id', // Attribute containing the item ID
+  searchRequestIdAttribute: 'data-search-request-id', // Attribute containing the search request ID
   sessionTimeout: 30 * 60 * 1000, // 30 minutes
   batchSize: 10, // Number of events to batch before sending
   sendInterval: 10000, // Send interval in milliseconds (10 seconds)
-  sessionId: 'backend-generated-session-id' // Optional: Inject session ID from backend
+  sessionId: 'backend-generated-session-id', // Optional: Inject session ID from backend
+  searchRequestId: 'current-search-request-id' // Optional: Inject search request ID from backend
 });
 ```
 
@@ -77,10 +79,10 @@ The collector supports two session management modes:
 
 ### Tracking Clicks
 
-Add the specified class and data attribute to your trackable elements:
+Add the specified class and data attributes to your trackable elements:
 
 ```html
-<div class="your-item-class" data-item-id="123">
+<div class="your-item-class" data-item-id="123" data-search-request-id="search-456">
   Item content
 </div>
 ```
@@ -109,11 +111,24 @@ collector.trackConversion({
 });
 ```
 
+### React Integration
+
+When using with React, you can update the search request ID programmatically:
+
+```javascript
+// In your React component
+useEffect(() => {
+  // Update search request ID when search results change
+  collector.updateSearchRequestId(newSearchRequestId);
+}, [newSearchRequestId]);
+```
+
 ## Configuration Options
 
 - `endpoint`: API endpoint for sending tracking data
 - `selector`: CSS selector for trackable items
 - `dataAttribute`: Attribute name containing the item ID
+- `searchRequestIdAttribute`: Attribute name containing the search request ID
 - `sessionTimeout`: Session timeout in milliseconds
 - `batchSize`: Number of events to batch before sending
 - `sendInterval`: Interval for sending batched events
@@ -155,7 +170,6 @@ The collector collects the following browser information with each event:
 - Device pixel ratio
 - Timezone
 - Browser type
-- IP Address
 - Network Information
   - Connection type (4G, 5G, etc.)
   - Downlink speed
@@ -173,15 +187,6 @@ The collector implements anonymous user tracking using a unique identifier compo
 - Provides visual identification without personal data
 - Included with every event as colorIdentifier
 
-## IP Address Collection
-
-The collector uses WebRTC to collect the user's IP address locally, without relying on external services. This approach:
-- Works without external API calls
-- Respects user privacy
-- Filters out private IP addresses
-- Provides public IP address information
-- Handles cleanup automatically
-
 ## Data Structure
 
 The collector sends data in the following format:
@@ -192,8 +197,8 @@ The collector sends data in the following format:
     {
       type: 'click',
       itemId: '123',
-      x: 100,
-      y: 200,
+      position: 3, // Position of the clicked element (1-based index)
+      searchRequestId: 'search-456', // ID of the search request that generated these results
       timestamp: '2024-01-01T12:00:00Z',
       sessionId: 'uuid',
       colorIdentifier: '#FF5733-#33FF57'
@@ -224,7 +229,6 @@ The collector sends data in the following format:
     devicePixelRatio: 2,
     timezone: 'America/New_York',
     browser: 'Chrome',
-    ipAddress: '123.45.67.89',
     connection: {
       effectiveType: '4g',
       downlink: 10,
