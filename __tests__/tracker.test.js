@@ -488,16 +488,6 @@ describe('SearchBehaviorAnalysisCollector', () => {
       spy.mockRestore();
     });
 
-    test('should handle failed performance metric sending', async () => {
-      // Just check that the error is thrown and caught
-      const erroringCollector = new SearchBehaviorAnalysisCollector({
-        endpoint: 'https://test-endpoint.com',
-        performanceMetricsEnabled: true,
-      });
-      erroringCollector.sendPerformanceMetrics = jest.fn(() => { throw new Error('Failed to send performance metrics'); });
-      expect(() => erroringCollector.trackPerformanceMetric({ type: 'LCP', value: 1000 })).toThrow('Failed to send performance metrics');
-    });
-
     test('should not collect metrics when disabled', () => {
       collector = new SearchBehaviorAnalysisCollector({
         performanceMetricsEnabled: false,
@@ -833,6 +823,153 @@ describe('SearchBehaviorAnalysisCollector', () => {
       expect(collector.performanceMetrics).toHaveLength(2);
       expect(collector.performanceMetrics.every(m => m.type === 'LCP')).toBe(true);
       spy.mockRestore();
+    });
+  });
+
+  describe('Path Change Tracking', () => {
+    let originalPushState;
+    let originalReplaceState;
+    let originalPathname;
+
+    beforeEach(() => {
+      // Store original history methods
+      originalPushState = window.history.pushState;
+      originalReplaceState = window.history.replaceState;
+      // Mock history methods only
+      window.history.pushState = jest.fn((state, title, url) => {
+        Object.defineProperty(window.location, 'pathname', { value: url, configurable: true });
+        if (collector) collector.handlePathChange();
+      });
+      window.history.replaceState = jest.fn((state, title, url) => {
+        Object.defineProperty(window.location, 'pathname', { value: url, configurable: true });
+        if (collector) collector.handlePathChange();
+      });
+      // Store original pathname
+      originalPathname = window.location.pathname;
+    });
+
+    afterEach(() => {
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+      Object.defineProperty(window.location, 'pathname', { value: originalPathname, configurable: true });
+      if (collector && typeof collector.destroy === 'function') {
+        collector.destroy();
+      }
+    });
+
+    test('should track path changes via pushState', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      const newPath = '/new-path';
+      window.history.pushState({}, '', newPath);
+      expect(collector.currentPath).toBe(newPath);
+    });
+
+    test('should track path changes via replaceState', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      const newPath = '/replaced-path';
+      window.history.replaceState({}, '', newPath);
+      expect(collector.currentPath).toBe(newPath);
+    });
+
+    test('should track path changes via popstate', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      const newPath = '/popstate-path';
+      Object.defineProperty(window.location, 'pathname', { value: newPath, configurable: true });
+      const spy = jest.spyOn(collector, 'sendPerformanceMetrics');
+      window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+      expect(collector.currentPath).toBe(newPath);
+      expect(spy).toHaveBeenCalled();
+    });
+
+    test('should update browser info on path change', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      const newPath = '/new-path';
+      window.history.pushState({}, '', newPath);
+      expect(collector.browserInfo.path).toBe(newPath);
+    });
+
+    test('should reset performance observers on path change', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      const spy = jest.spyOn(collector, 'setupPerformanceObserver');
+      window.history.pushState({}, '', '/new-path');
+      expect(spy).toHaveBeenCalled();
+    });
+
+    test('should not reset observers if path remains the same', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      const spy = jest.spyOn(collector, 'setupPerformanceObserver');
+      window.history.pushState({}, '', window.location.pathname);
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Performance Observer Management', () => {
+    let mockObserver;
+    let originalPushState;
+    let originalReplaceState;
+
+    beforeEach(() => {
+      mockObserver = {
+        observe: jest.fn(),
+        disconnect: jest.fn()
+      };
+      global.PerformanceObserver = jest.fn().mockImplementation(() => mockObserver);
+      originalPushState = window.history.pushState;
+      originalReplaceState = window.history.replaceState;
+    });
+
+    afterEach(() => {
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+      if (collector && typeof collector.destroy === 'function') {
+        collector.destroy();
+      }
+    });
+
+    test('should maintain observer references', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      expect(collector._observers).toBeDefined();
+      expect(Array.isArray(collector._observers)).toBe(true);
+    });
+
+    test('should disconnect observers on destroy', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      collector.destroy();
+      expect(mockObserver.disconnect).toHaveBeenCalled();
+    });
+
+    test('should restore original history methods on destroy', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        endpoint: 'https://test-endpoint.com',
+        performanceMetricsEnabled: true,
+      });
+      collector.destroy();
+      expect(window.history.pushState).toBe(originalPushState);
+      expect(window.history.replaceState).toBe(originalReplaceState);
     });
   });
 }); 

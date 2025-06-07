@@ -11,10 +11,11 @@ A lightweight, vanilla JavaScript collector for user behavior and click tracking
 - Configurable selectors and data attributes
 - Minified output for production use
 - Browser information collection
-- Comprehensive performance metrics tracking
+- Comprehensive performance metrics tracking per page path
 - Anonymous user tracking with color codes
 - Page visibility and unload tracking
 - Search request ID tracking for correlating clicks with search requests
+- Path-based metrics collection for single-page applications
 
 ## Installation
 
@@ -43,6 +44,7 @@ Initialize the collector with your configuration:
 ```javascript
 const collector = new SearchBehaviorAnalysisCollector({
   endpoint: 'https://your-api-endpoint.com/track',
+  metricsEndpoint: 'https://your-api-endpoint.com/metrics', // Optional: separate endpoint for metrics
   bearerToken: 'your-bearer-token-here',
   selector: '.your-item-class', // CSS selector for trackable items
   dataAttribute: 'data-item-id', // Attribute containing the item ID
@@ -51,9 +53,25 @@ const collector = new SearchBehaviorAnalysisCollector({
   batchSize: 10, // Number of events to batch before sending
   sendInterval: 10000, // Send interval in milliseconds (10 seconds)
   sessionId: 'backend-generated-session-id', // Optional: Inject session ID from backend
-  searchRequestId: 'current-search-request-id' // Optional: Inject search request ID from backend
+  searchRequestId: 'current-search-request-id', // Optional: Inject search request ID from backend
+  performanceMetricsEnabled: true // Optional: Enable/disable performance metrics collection
 });
 ```
+
+### Path-Based Metrics Collection
+
+The collector automatically tracks performance metrics for each unique path in your application:
+
+- Initial page load
+- Client-side navigation (pushState/replaceState)
+- Browser back/forward navigation
+- Direct URL changes
+
+Metrics are collected and sent separately for each path, allowing you to analyze performance across different pages of your application. The collector handles:
+
+- Automatic observer cleanup and reset on path changes
+- Path-specific performance metrics
+- Proper cleanup of resources when destroyed
 
 ### Session Management
 
@@ -141,6 +159,7 @@ useEffect(() => {
 ## Configuration Options
 
 - `endpoint`: API endpoint for sending tracking data
+- `metricsEndpoint`: API endpoint for sending performance metrics (defaults to '/api/metrics')
 - `selector`: CSS selector for trackable items
 - `dataAttribute`: Attribute name containing the item ID
 - `searchRequestIdAttribute`: Attribute name containing the search request ID
@@ -148,10 +167,11 @@ useEffect(() => {
 - `batchSize`: Number of events to batch before sending
 - `sendInterval`: Interval for sending batched events
 - `bearerToken`: Bearer token for authentication
+- `performanceMetricsEnabled`: Enable/disable performance metrics collection
 
 ## Performance Metrics
 
-The collector automatically collects the following performance metrics:
+The collector automatically collects the following performance metrics for each page path:
 
 ### Core Web Vitals
 - **LCP (Largest Contentful Paint)**: Measures when the largest content element becomes visible
@@ -186,6 +206,7 @@ The collector collects the following browser information with each event:
 - Device pixel ratio
 - Timezone
 - Browser type
+- Current domain and path
 - Network Information
   - Connection type (4G, 5G, etc.)
   - Downlink speed
@@ -245,6 +266,8 @@ The collector sends data in two different formats depending on the type of data 
     devicePixelRatio: 2,
     timezone: 'America/New_York',
     browser: 'Chrome',
+    domain: 'example.com',
+    path: '/products/shoes',
     connection: {
       effectiveType: '4g',
       downlink: 10,
@@ -326,7 +349,7 @@ The collector sends data in two different formats depending on the type of data 
 }
 ```
 
-Performance metrics are sent to a separate endpoint (`/metrics`) and are sent immediately when collected to ensure timely data. Regular events are batched and sent according to the configured batch size and interval.
+Performance metrics are sent to a separate endpoint (`metricsEndpoint`) and are sent immediately when collected to ensure timely data. Regular events are batched and sent according to the configured batch size and interval.
 
 ### Data Sending
 

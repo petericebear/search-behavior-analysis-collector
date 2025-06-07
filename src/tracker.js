@@ -2,6 +2,7 @@ class SearchBehaviorAnalysisCollector {
   constructor(config = {}) {
     this.config = {
       endpoint: config.endpoint || '/api/track',
+      metricsEndpoint: config.metricsEndpoint || '/api/metrics',
       selector: config.selector || '.trackable-item',
       dataAttribute: config.dataAttribute || 'data-item-id',
       searchRequestIdAttribute: config.searchRequestIdAttribute || 'data-search-request-id',
@@ -20,6 +21,7 @@ class SearchBehaviorAnalysisCollector {
     this.browserInfo = this.getBrowserInfo();
     this.colorIdentifier = this.getOrCreateColorIdentifier();
     this.utmParams = this.getUtmParameters();
+    this.currentPath = window.location.pathname;
     this.setupEventListeners();
    
     if (this.config.performanceMetricsEnabled) {
@@ -49,6 +51,8 @@ class SearchBehaviorAnalysisCollector {
       devicePixelRatio: window.devicePixelRatio,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       timestamp: new Date().toISOString(),
+      domain: window.location.hostname,
+      path: window.location.pathname,
       connection: navigator.connection ? {
         effectiveType: navigator.connection.effectiveType,
         downlink: navigator.connection.downlink,
@@ -72,6 +76,12 @@ class SearchBehaviorAnalysisCollector {
   }
 
   setupPerformanceObserver() {
+    // Disconnect existing observers if any
+    if (this._observers) {
+      this._observers.forEach(observer => observer.disconnect());
+    }
+    this._observers = [];
+
     if ('PerformanceObserver' in window) {
       // LCP Observer
       const lcpObserver = new PerformanceObserver((entryList) => {
@@ -86,6 +96,7 @@ class SearchBehaviorAnalysisCollector {
         });
       });
       lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });
+      this._observers.push(lcpObserver);
 
       // FCP Observer
       const fcpObserver = new PerformanceObserver((entryList) => {
@@ -96,6 +107,7 @@ class SearchBehaviorAnalysisCollector {
         });
       });
       fcpObserver.observe({ entryTypes: ['paint'] });
+      this._observers.push(fcpObserver);
 
       // FID Observer (First Input Delay)
       const fidObserver = new PerformanceObserver((entryList) => {
@@ -109,6 +121,7 @@ class SearchBehaviorAnalysisCollector {
         });
       });
       fidObserver.observe({ entryTypes: ['first-input'] });
+      this._observers.push(fidObserver);
 
       // CLS Observer (Cumulative Layout Shift)
       const clsObserver = new PerformanceObserver((entryList) => {
@@ -125,6 +138,7 @@ class SearchBehaviorAnalysisCollector {
         });
       });
       clsObserver.observe({ entryTypes: ['layout-shift'] });
+      this._observers.push(clsObserver);
 
       // Resource Timing Observer
       const resourceObserver = new PerformanceObserver((entryList) => {
@@ -140,6 +154,7 @@ class SearchBehaviorAnalysisCollector {
         });
       });
       resourceObserver.observe({ entryTypes: ['resource'] });
+      this._observers.push(resourceObserver);
 
       // Navigation Timing
       const navigationEntry = performance.getEntriesByType('navigation')[0];
@@ -191,7 +206,7 @@ class SearchBehaviorAnalysisCollector {
         headers['Authorization'] = `Bearer ${this.config.bearerToken}`;
       }
 
-      const response = await fetch(`${this.config.endpoint}/metrics`, {
+      const response = await fetch(`${this.config.metricsEndpoint}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(data),
@@ -277,10 +292,42 @@ class SearchBehaviorAnalysisCollector {
       });
     });
 
+    // Track path changes
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function(state, title, url) {
+      originalPushState.call(this, state, title, url);
+      this.handlePathChange();
+    }.bind(this);
+
+    history.replaceState = function(state, title, url) {
+      originalReplaceState.call(this, state, title, url);
+      this.handlePathChange();
+    }.bind(this);
+
+    // Listen for popstate events (back/forward navigation)
+    window.addEventListener('popstate', () => {
+      this.handlePathChange();
+    });
+
     // Track page unload
     window.addEventListener('beforeunload', () => {
       this.sendEvents(true); // Force send on page unload
     });
+  }
+
+  handlePathChange() {
+    const newPath = window.location.pathname;
+    if (newPath !== this.currentPath) {
+      this.currentPath = newPath;
+      this.browserInfo = this.getBrowserInfo(); // Update browser info with new path
+      
+      // Reset performance observers for the new page
+      if (this.config.performanceMetricsEnabled) {
+        this.setupPerformanceObserver();
+      }
+    }
   }
 
   setupBatchSending() {
@@ -447,8 +494,26 @@ class SearchBehaviorAnalysisCollector {
   }
 
   destroy() {
-    if (this._sessionInterval) clearInterval(this._sessionInterval);
-    if (this._batchInterval) clearInterval(this._batchInterval);
+    // Clear intervals
+    if (this._sessionInterval) {
+      clearInterval(this._sessionInterval);
+    }
+    if (this._batchInterval) {
+      clearInterval(this._batchInterval);
+    }
+
+    // Disconnect performance observers
+    if (this._observers) {
+      this._observers.forEach(observer => observer.disconnect());
+    }
+
+    // Restore original history methods
+    if (history.pushState !== this.originalPushState) {
+      history.pushState = this.originalPushState;
+    }
+    if (history.replaceState !== this.originalReplaceState) {
+      history.replaceState = this.originalReplaceState;
+    }
   }
 }
 
