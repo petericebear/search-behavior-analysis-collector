@@ -10,6 +10,7 @@ class SearchBehaviorAnalysisCollector {
       sendInterval: config.sendInterval || 10000, // 10 seconds
       sessionId: config.sessionId || null, // Allow session ID injection
       searchRequestId: config.searchRequestId || null, // Allow searchRequestId injection
+      bearerToken: config.bearerToken || null, // Optional bearer token for authentication
     };
 
     this.events = [];
@@ -281,16 +282,23 @@ class SearchBehaviorAnalysisCollector {
         }
       } else {
         // Fallback to fetch for normal operation
+        const headers = {
+          'Content-Type': 'application/json'
+        };
+
+        // Add bearer token to headers if provided
+        if (this.config.bearerToken) {
+          headers['Authorization'] = `Bearer ${this.config.bearerToken}`;
+        }
+
         const response = await fetch(this.config.endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           body: JSON.stringify(data),
         });
 
         if (!response.ok) {
-          // If sending fails, put events back in the queue
+          // Put events back in the queue
           this.events = [...eventsToSend, ...this.events];
           throw new Error('Failed to send events');
         }

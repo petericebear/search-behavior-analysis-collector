@@ -43,6 +43,7 @@ Initialize the collector with your configuration:
 ```javascript
 const collector = new SearchBehaviorAnalysisCollector({
   endpoint: 'https://your-api-endpoint.com/track',
+  bearerToken: 'your-bearer-token-here',
   selector: '.your-item-class', // CSS selector for trackable items
   dataAttribute: 'data-item-id', // Attribute containing the item ID
   searchRequestIdAttribute: 'data-search-request-id', // Attribute containing the search request ID
@@ -146,6 +147,7 @@ useEffect(() => {
 - `sessionTimeout`: Session timeout in milliseconds
 - `batchSize`: Number of events to batch before sending
 - `sendInterval`: Interval for sending batched events
+- `bearerToken`: Bearer token for authentication
 
 ## Performance Metrics
 
