@@ -205,8 +205,9 @@ The collector implements anonymous user tracking using a unique identifier compo
 
 ## Data Structure
 
-The collector sends data in the following format:
+The collector sends data in two different formats depending on the type of data being sent:
 
+### Event Payload
 ```javascript
 {
   events: [
@@ -219,12 +220,13 @@ The collector sends data in the following format:
       sessionId: 'uuid'
     },
     {
-      type: 'performance_metric',
-      name: 'LCP',
-      value: 1200,
-      element: 'IMG',
-      size: 15000,
-      url: 'https://example.com/image.jpg',
+      type: 'custom_event',
+      name: 'view_item',
+      data: {
+        itemId: '123',
+        category: 'electronics',
+        price: 99.99
+      },
       timestamp: '2024-01-01T12:00:00Z',
       sessionId: 'uuid'
     }
@@ -253,11 +255,78 @@ The collector sends data in the following format:
       deviceMemory: 8,
       hardwareConcurrency: 4
     }
+  },
+  utmParams: {
+    utm_source: 'google',
+    utm_medium: 'cpc',
+    utm_campaign: 'summer_sale'
   }
 }
 ```
 
-The browser information and color identifier are collected once per session and included at the session level, rather than being repeated for each event. This reduces payload size and improves efficiency.
+### Performance Metrics Payload
+```javascript
+{
+  performanceMetrics: [
+    {
+      type: 'LCP',
+      value: 1200,
+      element: 'IMG',
+      size: 15000,
+      url: 'https://example.com/image.jpg',
+      timestamp: '2024-01-01T12:00:00Z',
+      sessionId: 'uuid'
+    },
+    {
+      type: 'FCP',
+      value: 800,
+      timestamp: '2024-01-01T12:00:00Z',
+      sessionId: 'uuid'
+    },
+    {
+      type: 'FID',
+      value: 50,
+      name: 'click',
+      timestamp: '2024-01-01T12:00:00Z',
+      sessionId: 'uuid'
+    },
+    {
+      type: 'CLS',
+      value: 0.1,
+      timestamp: '2024-01-01T12:00:00Z',
+      sessionId: 'uuid'
+    },
+    {
+      type: 'RESOURCE',
+      name: 'https://example.com/script.js',
+      duration: 150,
+      size: 25000,
+      initiatorType: 'script',
+      timestamp: '2024-01-01T12:00:00Z',
+      sessionId: 'uuid'
+    },
+    {
+      type: 'NAVIGATION',
+      ttfb: 200,
+      domContentLoaded: 800,
+      load: 1200,
+      dns: 50,
+      tcp: 100,
+      request: 300,
+      timestamp: '2024-01-01T12:00:00Z',
+      sessionId: 'uuid'
+    }
+  ],
+  sessionId: 'uuid',
+  colorIdentifier: '#FF5733-#33FF57',
+  browserInfo: {
+    // Same browser info structure as event payload
+  },
+  timestamp: '2024-01-01T12:00:00Z'
+}
+```
+
+Performance metrics are sent to a separate endpoint (`/metrics`) and are sent immediately when collected to ensure timely data. Regular events are batched and sent according to the configured batch size and interval.
 
 ### Data Sending
 
