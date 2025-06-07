@@ -11,16 +11,20 @@ class SearchBehaviorAnalysisCollector {
       sessionId: config.sessionId || null, // Allow session ID injection
       searchRequestId: config.searchRequestId || null, // Allow searchRequestId injection
       bearerToken: config.bearerToken || null, // Optional bearer token for authentication
+      performanceMetricsEnabled: config.performanceMetricsEnabled !== false, // Default to true
     };
 
     this.events = [];
+    this.performanceMetrics = []; // Separate array for performance metrics
     this.sessionId = this.getOrCreateSessionId();
     this.browserInfo = this.getBrowserInfo();
     this.colorIdentifier = this.getOrCreateColorIdentifier();
     this.utmParams = this.getUtmParameters();
     this.setupEventListeners();
-    this.setupBatchSending();
-    this.setupPerformanceObserver();
+   
+    if (this.config.performanceMetricsEnabled) {
+      this.setupPerformanceObserver();
+    }
     
     // Check session expiration periodically
     setInterval(() => this.checkSessionExpiration(), 60000); // Check every minute
@@ -67,7 +71,7 @@ class SearchBehaviorAnalysisCollector {
       const lcpObserver = new PerformanceObserver((entryList) => {
         const entries = entryList.getEntries();
         const lastEntry = entries[entries.length - 1];
-        this.trackEvent('performance_metric', {
+        this.trackPerformanceMetric({
           type: 'LCP',
           value: lastEntry.startTime,
           element: lastEntry.element?.tagName || 'unknown',
@@ -80,7 +84,7 @@ class SearchBehaviorAnalysisCollector {
       // FCP Observer
       const fcpObserver = new PerformanceObserver((entryList) => {
         const entries = entryList.getEntries();
-        this.trackEvent('performance_metric', {
+        this.trackPerformanceMetric({
           type: 'FCP',
           value: entries[0].startTime
         });
@@ -91,7 +95,7 @@ class SearchBehaviorAnalysisCollector {
       const fidObserver = new PerformanceObserver((entryList) => {
         const entries = entryList.getEntries();
         entries.forEach(entry => {
-          this.trackEvent('performance_metric', {
+          this.trackPerformanceMetric({
             type: 'FID',
             value: entry.processingStart - entry.startTime,
             name: entry.name
@@ -109,7 +113,7 @@ class SearchBehaviorAnalysisCollector {
             clsValue += entry.value;
           }
         });
-        this.trackEvent('performance_metric', {
+        this.trackPerformanceMetric({
           type: 'CLS',
           value: clsValue
         });
@@ -120,7 +124,7 @@ class SearchBehaviorAnalysisCollector {
       const resourceObserver = new PerformanceObserver((entryList) => {
         const entries = entryList.getEntries();
         entries.forEach(entry => {
-          this.trackEvent('performance_metric', {
+          this.trackPerformanceMetric({
             type: 'RESOURCE',
             name: entry.name,
             duration: entry.duration,
@@ -134,7 +138,7 @@ class SearchBehaviorAnalysisCollector {
       // Navigation Timing
       const navigationEntry = performance.getEntriesByType('navigation')[0];
       if (navigationEntry) {
-        this.trackEvent('performance_metric', {
+        this.trackPerformanceMetric({
           type: 'NAVIGATION',
           ttfb: navigationEntry.responseStart - navigationEntry.requestStart,
           domContentLoaded: navigationEntry.domContentLoadedEventEnd - navigationEntry.startTime,
@@ -144,6 +148,58 @@ class SearchBehaviorAnalysisCollector {
           request: navigationEntry.responseEnd - navigationEntry.requestStart
         });
       }
+    }
+  }
+
+  trackPerformanceMetric(metricData) {
+    this.performanceMetrics.push({
+      ...metricData,
+      timestamp: new Date().toISOString(),
+      sessionId: this.sessionId
+    });
+
+    // Send performance metrics immediately to ensure timely data
+    this.sendPerformanceMetrics();
+  }
+
+  async sendPerformanceMetrics() {
+    if (this.performanceMetrics.length === 0) return;
+
+    const metricsToSend = [...this.performanceMetrics];
+    this.performanceMetrics = [];
+
+    const data = {
+      performanceMetrics: metricsToSend,
+      sessionId: this.sessionId,
+      colorIdentifier: this.colorIdentifier,
+      browserInfo: this.browserInfo,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+
+      if (this.config.bearerToken) {
+        headers['Authorization'] = `Bearer ${this.config.bearerToken}`;
+      }
+
+      const response = await fetch(`${this.config.endpoint}/metrics`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        // Put metrics back in the queue
+        this.performanceMetrics = [...metricsToSend, ...this.performanceMetrics];
+        throw new Error('Failed to send performance metrics');
+      }
+    } catch (error) {
+      console.error('Error sending performance metrics:', error);
+      // Put metrics back in the queue
+      this.performanceMetrics = [...metricsToSend, ...this.performanceMetrics];
     }
   }
 
