@@ -27,7 +27,13 @@ class SearchBehaviorAnalysisCollector {
     }
     
     // Check session expiration periodically
-    setInterval(() => this.checkSessionExpiration(), 60000); // Check every minute
+    this._sessionInterval = setInterval(() => this.checkSessionExpiration(), 60000); // Check every minute
+    // Batch sending interval
+    this._batchInterval = setInterval(() => {
+      if (this.events.length > 0) {
+        this.sendEvents();
+      }
+    }, this.config.sendInterval);
   }
 
   getBrowserInfo() {
@@ -206,6 +212,7 @@ class SearchBehaviorAnalysisCollector {
   getOrCreateSessionId() {
     // If session ID is provided in config, use it
     if (this.config.sessionId) {
+      console.log('[DEBUG] Using injected sessionId, setting localStorage:', typeof localStorage, localStorage);
       localStorage.setItem('tracker_session_id', this.config.sessionId);
       localStorage.setItem('tracker_session_timestamp', new Date().toISOString());
       return this.config.sessionId;
@@ -219,12 +226,14 @@ class SearchBehaviorAnalysisCollector {
     if (sessionId && sessionTimestamp) {
       const sessionAge = new Date().getTime() - new Date(sessionTimestamp).getTime();
       if (sessionAge < this.config.sessionTimeout) {
+        console.log('[DEBUG] Using existing sessionId:', sessionId);
         return sessionId;
       }
     }
 
     // Create new session if none exists or if expired
     const newSessionId = this.generateUUID();
+    console.log('[DEBUG] Creating new session, setting localStorage:', typeof localStorage, localStorage);
     localStorage.setItem('tracker_session_id', newSessionId);
     localStorage.setItem('tracker_session_timestamp', new Date().toISOString());
     return newSessionId;
@@ -358,6 +367,13 @@ class SearchBehaviorAnalysisCollector {
           this.events = [...eventsToSend, ...this.events];
           throw new Error('Failed to send events');
         }
+        // Try to parse JSON and log error if it fails
+        try {
+          await response.json();
+        } catch (jsonError) {
+          console.error('Error sending events:', jsonError);
+          this.events = [...eventsToSend, ...this.events];
+        }
       }
     } catch (error) {
       console.error('Error sending events:', error);
@@ -428,6 +444,11 @@ class SearchBehaviorAnalysisCollector {
   // Add method to update searchRequestId
   updateSearchRequestId(searchRequestId) {
     this.config.searchRequestId = searchRequestId;
+  }
+
+  destroy() {
+    if (this._sessionInterval) clearInterval(this._sessionInterval);
+    if (this._batchInterval) clearInterval(this._batchInterval);
   }
 }
 
