@@ -159,6 +159,16 @@ describe('SearchBehaviorAnalysisCollector', () => {
       expect(mockLocalStorage.setItem).toHaveBeenCalledWith('tracker_session_timestamp', expect.any(String));
     });
 
+    test('should use injected session ID from config', () => {
+      const injectedSessionId = 'backend-injected-session-id';
+      collector = new SearchBehaviorAnalysisCollector({
+        sessionId: injectedSessionId
+      });
+      expect(collector.sessionId).toBe(injectedSessionId);
+      expect(mockLocalStorage.setItem).toHaveBeenCalledWith('tracker_session_id', injectedSessionId);
+      expect(mockLocalStorage.setItem).toHaveBeenCalledWith('tracker_session_timestamp', expect.any(String));
+    });
+
     test('should use existing session ID if valid', () => {
       const existingSessionId = 'existing-session-id';
       mockLocalStorage.getItem.mockImplementation((key) => {
@@ -253,6 +263,46 @@ describe('SearchBehaviorAnalysisCollector', () => {
       expect(collector.events[0].searchRequestId).toBe(searchRequestId);
     });
 
+    test('should not track click events on elements without data-item-id', () => {
+      collector = new SearchBehaviorAnalysisCollector();
+
+      document.body.innerHTML = `
+        <div class="trackable-item">
+          Item without ID
+        </div>
+      `;
+
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+      });
+
+      document.querySelector('.trackable-item').dispatchEvent(clickEvent);
+
+      // No events should be tracked
+      expect(collector.events.length).toBe(0);
+    });
+
+    test('should not track click events on non-trackable elements', () => {
+      collector = new SearchBehaviorAnalysisCollector();
+
+      document.body.innerHTML = `
+        <div class="non-trackable" data-item-id="123">
+          Non-trackable Item
+        </div>
+      `;
+
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+      });
+
+      document.querySelector('.non-trackable').dispatchEvent(clickEvent);
+
+      // No events should be tracked
+      expect(collector.events.length).toBe(0);
+    });
+
     test('should track visibility changes', () => {
       mockVisibilityState = 'hidden';
       document.dispatchEvent(new Event('visibilitychange'));
@@ -301,7 +351,6 @@ describe('SearchBehaviorAnalysisCollector', () => {
     beforeEach(() => {
       collector = new SearchBehaviorAnalysisCollector({
         endpoint: 'https://test-endpoint.com',
-        bearerToken: 'test-token',
         batchSize: 2,
       });
       collector.events = [];
@@ -311,7 +360,7 @@ describe('SearchBehaviorAnalysisCollector', () => {
       collector.events = [];
     });
 
-    test('should send events with bearer token', async () => {
+    test('should send events with correct headers', async () => {
       collector.trackEvent('test_event', { test: 'data' });
       await collector.sendEvents();
 
@@ -320,7 +369,6 @@ describe('SearchBehaviorAnalysisCollector', () => {
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
-            'Authorization': 'Bearer test-token',
             'Content-Type': 'application/json',
           }),
         })
@@ -390,6 +438,27 @@ describe('SearchBehaviorAnalysisCollector', () => {
       });
     });
 
+    test('should track LCP metric with null element', () => {
+      const observer = mockPerformanceObserver.mock.results[0].value;
+      observer.callback({
+        getEntries: () => [{
+          startTime: 1200,
+          element: null,
+          size: 10000,
+          url: 'https://test.com/image2.jpg',
+        }],
+      });
+      expect(collector.performanceMetrics.length).toBeGreaterThanOrEqual(1);
+      const lcpMetric = collector.performanceMetrics.find(m => m.value === 1200);
+      expect(lcpMetric).toMatchObject({
+        type: 'LCP',
+        value: 1200,
+        element: 'unknown',
+        size: 10000,
+        url: 'https://test.com/image2.jpg',
+      });
+    });
+
     test('should track FCP metric', () => {
       const observer = mockPerformanceObserver.mock.results[1].value;
       observer.callback({
@@ -434,6 +503,19 @@ describe('SearchBehaviorAnalysisCollector', () => {
         type: 'CLS',
         value: 0.1,
       });
+    });
+
+    test('should ignore CLS entries with recent input', () => {
+      const observer = mockPerformanceObserver.mock.results[3].value;
+      observer.callback({
+        getEntries: () => [
+          { value: 0.1, hadRecentInput: true },  // Should be ignored
+          { value: 0.05, hadRecentInput: false }, // Should be counted
+        ],
+      });
+      expect(collector.performanceMetrics.length).toBeGreaterThanOrEqual(1);
+      const clsMetric = collector.performanceMetrics.find(m => m.type === 'CLS');
+      expect(clsMetric.value).toBe(0.05); // Only the entry without recent input
     });
 
     test('should track resource timing', () => {
@@ -588,6 +670,66 @@ describe('SearchBehaviorAnalysisCollector', () => {
     });
   });
 
+  describe('UUID Generation', () => {
+    test('should generate valid UUID format', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        performanceMetricsEnabled: false,
+      });
+      const uuid = collector.generateUUID();
+      
+      // Should match UUID v4 format
+      expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    });
+
+    test('should use fallback UUID generation when crypto.randomUUID is not available', () => {
+      // Save original crypto
+      const originalCrypto = global.crypto;
+      
+      // Remove crypto.randomUUID
+      global.crypto = {};
+      
+      // Reset modules to pick up the new crypto state
+      jest.resetModules();
+      const TrackerClass = require('../src/tracker');
+      
+      collector = new TrackerClass({
+        sessionId: 'test-session',
+        performanceMetricsEnabled: false,
+      });
+      const uuid = collector.generateUUID();
+      
+      // Should match UUID v4 format (with specific version bits)
+      expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      
+      // Restore crypto
+      global.crypto = originalCrypto;
+    });
+
+    test('should use fallback UUID generation when crypto is undefined', () => {
+      // Save original crypto
+      const originalCrypto = global.crypto;
+      
+      // Remove crypto entirely
+      delete global.crypto;
+      
+      // Reset modules to pick up the new crypto state
+      jest.resetModules();
+      const TrackerClass = require('../src/tracker');
+      
+      collector = new TrackerClass({
+        sessionId: 'test-session',
+        performanceMetricsEnabled: false,
+      });
+      const uuid = collector.generateUUID();
+      
+      // Should match UUID v4 format (with specific version bits)
+      expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      
+      // Restore crypto
+      global.crypto = originalCrypto;
+    });
+  });
+
   describe('UTM Parameters', () => {
     test('should collect UTM parameters from URL', () => {
       // Test the getUtmParameters method directly with a mock URLSearchParams
@@ -619,6 +761,30 @@ describe('SearchBehaviorAnalysisCollector', () => {
       // Default jsdom URL has no UTM params
       collector = new SearchBehaviorAnalysisCollector();
       expect(collector.utmParams).toEqual({});
+    });
+
+    test('should handle partial UTM parameters', () => {
+      // Test the getUtmParameters method logic directly with partial params
+      const mockSearch = '?utm_source=google&utm_campaign=summer_sale';
+      const urlParams = new URLSearchParams(mockSearch);
+      const utmParams = {};
+      const utmKeys = ['source', 'medium', 'campaign', 'term', 'content'];
+      
+      utmKeys.forEach(key => {
+        const value = urlParams.get(`utm_${key}`);
+        if (value) {
+          utmParams[`utm_${key}`] = value;
+        }
+      });
+      
+      // Should only have the two params that were provided
+      expect(utmParams).toEqual({
+        utm_source: 'google',
+        utm_campaign: 'summer_sale'
+      });
+      expect(utmParams.utm_medium).toBeUndefined();
+      expect(utmParams.utm_term).toBeUndefined();
+      expect(utmParams.utm_content).toBeUndefined();
     });
   });
 
@@ -721,6 +887,11 @@ describe('SearchBehaviorAnalysisCollector', () => {
       expect(typeof mod).toBe('function');
     });
 
+    test('module default export is available', () => {
+      const mod = require('../src/tracker');
+      expect(mod.default).toBe(mod);
+    });
+
     test('handles localStorage errors', () => {
       mockLocalStorage.getItem.mockImplementation(() => {
         throw new Error('Storage error');
@@ -787,19 +958,12 @@ describe('SearchBehaviorAnalysisCollector', () => {
       spy.mockRestore();
     });
 
-    test('sendEvents handles fetch error with non-JSON response', async () => {
+    test('sendEvents handles successful response', async () => {
       collector.events = [{ type: 'custom_event', name: 'test', data: {} }];
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.reject(new Error('Invalid JSON'))
-      });
-      const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      global.fetch = jest.fn().mockResolvedValue({ ok: true });
       await collector.sendEvents();
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining('Error sending events:'), expect.any(Error));
-      // Event is re-queued only once
-      expect(collector.events).toHaveLength(1);
-      expect(collector.events.every(e => e.type === 'custom_event')).toBe(true);
-      spy.mockRestore();
+      // Events should be cleared on success
+      expect(collector.events).toHaveLength(0);
     });
 
     test('sendEvents handles fetch error with non-OK response', async () => {
@@ -832,6 +996,100 @@ describe('SearchBehaviorAnalysisCollector', () => {
       expect(collector.performanceMetrics).toHaveLength(2);
       expect(collector.performanceMetrics.every(m => m.type === 'LCP')).toBe(true);
       spy.mockRestore();
+    });
+  });
+
+  describe('History Navigation', () => {
+    let originalPushState;
+    let originalReplaceState;
+
+    beforeEach(() => {
+      originalPushState = window.history.pushState;
+      originalReplaceState = window.history.replaceState;
+    });
+
+    afterEach(() => {
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+      if (collector && typeof collector.destroy === 'function') {
+        collector.destroy();
+      }
+    });
+
+    test('should call handlePathChange on pushState', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        performanceMetricsEnabled: false,
+      });
+      const spy = jest.spyOn(collector, 'handlePathChange');
+      
+      // Call the overridden pushState
+      window.history.pushState({}, '', '/new-path');
+      
+      expect(spy).toHaveBeenCalled();
+    });
+
+    test('should call handlePathChange on replaceState', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        performanceMetricsEnabled: false,
+      });
+      const spy = jest.spyOn(collector, 'handlePathChange');
+      
+      // Call the overridden replaceState
+      window.history.replaceState({}, '', '/replaced-path');
+      
+      expect(spy).toHaveBeenCalled();
+    });
+  });
+
+  describe('Page Unload', () => {
+    afterEach(() => {
+      if (collector && typeof collector.destroy === 'function') {
+        collector.destroy();
+      }
+    });
+
+    test('should send events on beforeunload', () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        performanceMetricsEnabled: false,
+      });
+      collector.trackEvent('test_event', { test: 'data' });
+      
+      const spy = jest.spyOn(collector, 'sendEvents');
+      
+      // Trigger beforeunload event
+      window.dispatchEvent(new Event('beforeunload'));
+      
+      expect(spy).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('Click Batch Processing', () => {
+    afterEach(() => {
+      if (collector && typeof collector.destroy === 'function') {
+        collector.destroy();
+      }
+    });
+
+    test('should batch send clicks when reaching batch size', async () => {
+      collector = new SearchBehaviorAnalysisCollector({
+        batchSize: 2,
+        performanceMetricsEnabled: false,
+      });
+      
+      document.body.innerHTML = `
+        <div class="trackable-item" data-item-id="item1">Item 1</div>
+        <div class="trackable-item" data-item-id="item2">Item 2</div>
+      `;
+      
+      const clickEvent1 = new MouseEvent('click', { bubbles: true, cancelable: true });
+      const clickEvent2 = new MouseEvent('click', { bubbles: true, cancelable: true });
+      
+      document.querySelectorAll('.trackable-item')[0].dispatchEvent(clickEvent1);
+      expect(collector.events.length).toBe(1);
+      
+      document.querySelectorAll('.trackable-item')[1].dispatchEvent(clickEvent2);
+      // After 2nd click, batch should be sent and events cleared
+      expect(mockFetch).toHaveBeenCalled();
     });
   });
 

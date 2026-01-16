@@ -11,7 +11,6 @@ class SearchBehaviorAnalysisCollector {
       sendInterval: config.sendInterval || 10000, // 10 seconds
       sessionId: config.sessionId || null, // Allow session ID injection
       searchRequestId: config.searchRequestId || null, // Allow searchRequestId injection
-      bearerToken: config.bearerToken || null, // Optional bearer token for authentication
       performanceMetricsEnabled: config.performanceMetricsEnabled !== false, // Default to true
     };
 
@@ -198,17 +197,11 @@ class SearchBehaviorAnalysisCollector {
     };
 
     try {
-      const headers = {
-        'Content-Type': 'application/json'
-      };
-
-      if (this.config.bearerToken) {
-        headers['Authorization'] = `Bearer ${this.config.bearerToken}`;
-      }
-
-      const response = await fetch(`${this.config.metricsEndpoint}`, {
+      const response = await fetch(this.config.metricsEndpoint, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(data),
       });
 
@@ -252,6 +245,11 @@ class SearchBehaviorAnalysisCollector {
   }
 
   generateUUID() {
+    // Use native crypto.randomUUID() if available (modern browsers)
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    // Fallback for older browsers
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
       const r = Math.random() * 16 | 0;
       const v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -388,18 +386,11 @@ class SearchBehaviorAnalysisCollector {
         }
       } else {
         // Fallback to fetch for normal operation
-        const headers = {
-          'Content-Type': 'application/json'
-        };
-
-        // Add bearer token to headers if provided
-        if (this.config.bearerToken) {
-          headers['Authorization'] = `Bearer ${this.config.bearerToken}`;
-        }
-
         const response = await fetch(this.config.endpoint, {
           method: 'POST',
-          headers,
+          headers: {
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify(data),
         });
 
@@ -407,13 +398,6 @@ class SearchBehaviorAnalysisCollector {
           // Put events back in the queue
           this.events = [...eventsToSend, ...this.events];
           throw new Error('Failed to send events');
-        }
-        // Try to parse JSON and log error if it fails
-        try {
-          await response.json();
-        } catch (jsonError) {
-          console.error('Error sending events:', jsonError);
-          this.events = [...eventsToSend, ...this.events];
         }
       }
     } catch (error) {

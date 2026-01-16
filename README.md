@@ -45,7 +45,6 @@ Initialize the collector with your configuration:
 const collector = new SearchBehaviorAnalysisCollector({
   endpoint: 'https://your-api-endpoint.com/track',
   metricsEndpoint: 'https://your-api-endpoint.com/metrics', // Optional: separate endpoint for metrics
-  bearerToken: 'your-bearer-token-here',
   selector: '.your-item-class', // CSS selector for trackable items
   dataAttribute: 'data-item-id', // Attribute containing the item ID
   searchRequestIdAttribute: 'data-search-request-id', // Attribute containing the search request ID
@@ -156,18 +155,34 @@ useEffect(() => {
 }, [newSearchRequestId]);
 ```
 
+### Cleanup
+
+When you need to remove the collector (e.g., when unmounting a component), call the `destroy()` method:
+
+```javascript
+// Clean up event listeners, intervals, and performance observers
+collector.destroy();
+```
+
+This will:
+- Clear all intervals (session check, batch sending)
+- Disconnect performance observers
+- Remove event listeners (click, visibility, popstate, beforeunload)
+- Restore original history methods (pushState, replaceState)
+
 ## Configuration Options
 
-- `endpoint`: API endpoint for sending tracking data
+- `endpoint`: API endpoint for sending tracking data (defaults to '/api/track')
 - `metricsEndpoint`: API endpoint for sending performance metrics (defaults to '/api/metrics')
-- `selector`: CSS selector for trackable items
-- `dataAttribute`: Attribute name containing the item ID
-- `searchRequestIdAttribute`: Attribute name containing the search request ID
-- `sessionTimeout`: Session timeout in milliseconds
-- `batchSize`: Number of events to batch before sending
-- `sendInterval`: Interval for sending batched events
-- `bearerToken`: Bearer token for authentication
-- `performanceMetricsEnabled`: Enable/disable performance metrics collection
+- `selector`: CSS selector for trackable items (defaults to '.trackable-item')
+- `dataAttribute`: Attribute name containing the item ID (defaults to 'data-item-id')
+- `searchRequestIdAttribute`: Attribute name containing the search request ID (defaults to 'data-search-request-id')
+- `sessionTimeout`: Session timeout in milliseconds (defaults to 30 minutes)
+- `batchSize`: Number of events to batch before sending (defaults to 10)
+- `sendInterval`: Interval for sending batched events in milliseconds (defaults to 10 seconds)
+- `sessionId`: Optional session ID to inject from backend
+- `searchRequestId`: Optional search request ID to inject from backend
+- `performanceMetricsEnabled`: Enable/disable performance metrics collection (defaults to true)
 
 ## Performance Metrics
 
