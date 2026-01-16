@@ -43,7 +43,7 @@ class SearchBehaviorAnalysisCollector {
     const browserInfo = {
       userAgent: ua,
       language: navigator.language,
-      platform: navigator.platform,
+      platform: navigator.userAgentData?.platform || navigator.platform,
       screenWidth: window.screen.width,
       screenHeight: window.screen.height,
       viewportWidth: window.innerWidth,
@@ -227,7 +227,6 @@ class SearchBehaviorAnalysisCollector {
   getOrCreateSessionId() {
     // If session ID is provided in config, use it
     if (this.config.sessionId) {
-      console.log('[DEBUG] Using injected sessionId, setting localStorage:', typeof localStorage, localStorage);
       localStorage.setItem('tracker_session_id', this.config.sessionId);
       localStorage.setItem('tracker_session_timestamp', new Date().toISOString());
       return this.config.sessionId;
@@ -241,14 +240,12 @@ class SearchBehaviorAnalysisCollector {
     if (sessionId && sessionTimestamp) {
       const sessionAge = new Date().getTime() - new Date(sessionTimestamp).getTime();
       if (sessionAge < this.config.sessionTimeout) {
-        console.log('[DEBUG] Using existing sessionId:', sessionId);
         return sessionId;
       }
     }
 
     // Create new session if none exists or if expired
     const newSessionId = this.generateUUID();
-    console.log('[DEBUG] Creating new session, setting localStorage:', typeof localStorage, localStorage);
     localStorage.setItem('tracker_session_id', newSessionId);
     localStorage.setItem('tracker_session_timestamp', new Date().toISOString());
     return newSessionId;
@@ -263,7 +260,8 @@ class SearchBehaviorAnalysisCollector {
   }
 
   setupEventListeners() {
-    document.addEventListener('click', (event) => {
+    // Store listener references for cleanup
+    this._clickListener = (event) => {
       const target = event.target.closest(this.config.selector);
       if (target) {
         const itemId = target.getAttribute(this.config.dataAttribute);
@@ -283,38 +281,42 @@ class SearchBehaviorAnalysisCollector {
           });
         }
       }
-    });
+    };
+    document.addEventListener('click', this._clickListener);
 
     // Track page visibility changes
-    document.addEventListener('visibilitychange', () => {
+    this._visibilityListener = () => {
       this.trackEvent('visibility_change', {
         state: document.visibilityState
       });
-    });
+    };
+    document.addEventListener('visibilitychange', this._visibilityListener);
 
-    // Track path changes
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
+    // Track path changes - store original methods as instance properties
+    this._originalPushState = history.pushState;
+    this._originalReplaceState = history.replaceState;
 
     history.pushState = function(state, title, url) {
-      originalPushState.call(this, state, title, url);
+      this._originalPushState.call(history, state, title, url);
       this.handlePathChange();
     }.bind(this);
 
     history.replaceState = function(state, title, url) {
-      originalReplaceState.call(this, state, title, url);
+      this._originalReplaceState.call(history, state, title, url);
       this.handlePathChange();
     }.bind(this);
 
     // Listen for popstate events (back/forward navigation)
-    window.addEventListener('popstate', () => {
+    this._popstateListener = () => {
       this.handlePathChange();
-    });
+    };
+    window.addEventListener('popstate', this._popstateListener);
 
     // Track page unload
-    window.addEventListener('beforeunload', () => {
+    this._beforeunloadListener = () => {
       this.sendEvents(true); // Force send on page unload
-    });
+    };
+    window.addEventListener('beforeunload', this._beforeunloadListener);
   }
 
   handlePathChange() {
@@ -328,14 +330,6 @@ class SearchBehaviorAnalysisCollector {
         this.setupPerformanceObserver();
       }
     }
-  }
-
-  setupBatchSending() {
-    setInterval(() => {
-      if (this.events.length > 0) {
-        this.sendEvents();
-      }
-    }, this.config.sendInterval);
   }
 
   trackEvent(eventName, eventData = {}) {
@@ -507,12 +501,26 @@ class SearchBehaviorAnalysisCollector {
       this._observers.forEach(observer => observer.disconnect());
     }
 
-    // Restore original history methods
-    if (history.pushState !== this.originalPushState) {
-      history.pushState = this.originalPushState;
+    // Remove event listeners
+    if (this._clickListener) {
+      document.removeEventListener('click', this._clickListener);
     }
-    if (history.replaceState !== this.originalReplaceState) {
-      history.replaceState = this.originalReplaceState;
+    if (this._visibilityListener) {
+      document.removeEventListener('visibilitychange', this._visibilityListener);
+    }
+    if (this._popstateListener) {
+      window.removeEventListener('popstate', this._popstateListener);
+    }
+    if (this._beforeunloadListener) {
+      window.removeEventListener('beforeunload', this._beforeunloadListener);
+    }
+
+    // Restore original history methods
+    if (this._originalPushState) {
+      history.pushState = this._originalPushState;
+    }
+    if (this._originalReplaceState) {
+      history.replaceState = this._originalReplaceState;
     }
   }
 }
@@ -520,6 +528,7 @@ class SearchBehaviorAnalysisCollector {
 // Export for both module and global usage
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = SearchBehaviorAnalysisCollector;
+  module.exports.default = SearchBehaviorAnalysisCollector;
 } else {
   window.SearchBehaviorAnalysisCollector = SearchBehaviorAnalysisCollector;
 } 
