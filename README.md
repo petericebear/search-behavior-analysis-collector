@@ -373,4 +373,172 @@ The collector uses two methods for sending data:
 1. **Regular Operation**: Uses the Fetch API to send batched events
 2. **Page Unload**: Uses the sendBeacon API to ensure reliable sending during page unload
 
-This ensures that no data is lost, even when the user navigates away from the page. 
+This ensures that no data is lost, even when the user navigates away from the page.
+
+## Elasticsearch Setup
+
+The project includes an Elasticsearch setup script optimized for storing search behavior data for Learn to Rank (LTR) model training.
+
+### Prerequisites
+
+- Elasticsearch 8.x running and accessible
+- `curl` installed on your system
+
+### Running the Setup Script
+
+Navigate to the `elastic-setup` directory and run the setup script:
+
+```bash
+# With basic authentication
+ES_HOST=https://localhost:9200 ES_USER=elastic ES_PASSWORD=changeme ./elastic-setup/setup-elasticsearch.sh
+
+# With API key authentication
+ES_HOST=https://localhost:9200 ES_API_KEY=your-api-key ./elastic-setup/setup-elasticsearch.sh
+
+# Local development (no auth)
+ES_HOST=http://localhost:9200 ./elastic-setup/setup-elasticsearch.sh
+```
+
+### What the Script Creates
+
+#### 1. ILM Policy (`search-behavior-ilm-policy`)
+
+An Index Lifecycle Management policy optimized for LTR workloads:
+
+- **Hot Phase**: Active indexing with 4 primary shards
+- **Rollover**: Triggers at 20GB max primary shard size
+- **Force Merge**: Reduces to 1 segment after rollover (optimizes read performance for ML training)
+
+#### 2. Events Index Template (`search-behavior-events`)
+
+Stores click events, custom events, and conversions with the following field types:
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `sessionId` | keyword | User session identification |
+| `colorIdentifier` | keyword | Anonymous user tracking |
+| `events.type` | keyword | Event type (click, custom_event, conversion) |
+| `events.itemId` | keyword | Clicked/viewed item ID |
+| `events.position` | integer | Position in search results (1-based) |
+| `events.searchRequestId` | keyword | Links clicks to search queries |
+| `browserInfo.*` | keyword/integer | Browser and device context |
+| `utmParams.*` | keyword | Marketing attribution |
+| `timestamp` | date | Event timestamp |
+
+#### 3. Metrics Index Template (`search-behavior-metrics`)
+
+Stores performance metrics (Core Web Vitals, Navigation Timing, Resource Timing):
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `performanceMetrics.type` | keyword | Metric type (LCP, FCP, FID, CLS, etc.) |
+| `performanceMetrics.value` | float | Metric value |
+| `performanceMetrics.element` | keyword | DOM element (for LCP) |
+| `performanceMetrics.duration` | float | Resource load duration |
+| `performanceMetrics.ttfb` | float | Time to First Byte |
+| `timestamp` | date | Metric timestamp |
+
+### Indexing Data
+
+After running the setup script, send data to the write aliases:
+
+```bash
+# Index an event document
+curl -X POST "localhost:9200/search-behavior-events/_doc" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "timestamp": "2024-01-01T12:00:00Z",
+    "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+    "colorIdentifier": "#FF5733-#33FF57",
+    "events": [{
+      "type": "click",
+      "itemId": "product-123",
+      "position": 3,
+      "searchRequestId": "search-456",
+      "timestamp": "2024-01-01T12:00:00Z",
+      "sessionId": "550e8400-e29b-41d4-a716-446655440000"
+    }],
+    "browserInfo": {
+      "browser": "Chrome",
+      "platform": "MacIntel",
+      "language": "en-US"
+    },
+    "utmParams": {
+      "utm_source": "google",
+      "utm_medium": "cpc"
+    }
+  }'
+
+# Index a metrics document
+curl -X POST "localhost:9200/search-behavior-metrics/_doc" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "timestamp": "2024-01-01T12:00:00Z",
+    "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+    "colorIdentifier": "#FF5733-#33FF57",
+    "performanceMetrics": [{
+      "type": "LCP",
+      "value": 1200,
+      "element": "IMG",
+      "timestamp": "2024-01-01T12:00:00Z",
+      "sessionId": "550e8400-e29b-41d4-a716-446655440000"
+    }]
+  }'
+```
+
+### Querying for LTR Training Data
+
+Extract click-through data for training Learn to Rank models:
+
+```bash
+# Get all clicks with position data for a specific search request
+curl -X GET "localhost:9200/search-behavior-events/_search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "nested": {
+        "path": "events",
+        "query": {
+          "bool": {
+            "must": [
+              { "term": { "events.type": "click" } },
+              { "term": { "events.searchRequestId": "search-456" } }
+            ]
+          }
+        },
+        "inner_hits": {}
+      }
+    }
+  }'
+
+# Aggregate clicks by position for click model training
+curl -X GET "localhost:9200/search-behavior-events/_search" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "size": 0,
+    "aggs": {
+      "clicks": {
+        "nested": { "path": "events" },
+        "aggs": {
+          "by_position": {
+            "terms": { "field": "events.position" },
+            "aggs": {
+              "by_item": {
+                "terms": { "field": "events.itemId" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }'
+```
+
+### LTR Data Model
+
+The schema is designed for Learn to Rank with:
+
+- **Click-through signals**: `itemId`, `position`, `searchRequestId` to build click models
+- **Session context**: `sessionId`, `colorIdentifier` for user-level features
+- **Query-document pairs**: Link via `searchRequestId` to your search query logs
+- **Behavioral features**: Event types, timestamps for engagement scoring
